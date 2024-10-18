@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest import mock
 
 from dns import message, name, resolver
@@ -92,6 +93,26 @@ class WhenLookingUpRecords(unittest.TestCase):
                     srvlookup.SRV('1.2.3.4', 11211, 2, 0, 'foo1.bar.baz'),
                     srvlookup.SRV('foo3.bar.baz', 11213, 3, 0, 'foo3.bar.baz')
                 ])
+
+    def test_should_return_a_list_of_records_with_expiry(self):
+        with mock.patch('dns.resolver.resolve') as query:
+            query_name = name.from_text('foo.bar.baz.')
+            msg = self.get_message()
+            answer = resolver.Answer(query_name, 33, 1, msg, msg.answer[0])
+            query.return_value = answer
+
+            (records, expiry) = srvlookup.lookup_expiry('foo', 'bar', 'baz')
+            self.assertEqual(
+                records, [
+                    srvlookup.SRV('1.2.3.5', 11212, 1, 0, 'foo2.bar.baz'),
+                    srvlookup.SRV('1.2.3.4', 11211, 2, 0, 'foo1.bar.baz')
+                ])
+            # Records are sent with an expiry of 0 (now)
+            # Because we capture the date after the packet was parsed, the resulting
+            # expiry should be: now() - 1 < expiry <= now()
+            expected_expiry = datetime.now().timestamp()
+            self.assertLessEqual(expiry, expected_expiry)
+            self.assertGreater(expiry, expected_expiry - 1)
 
 
 class WhenInvokingGetDomain(unittest.TestCase):

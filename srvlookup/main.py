@@ -25,6 +25,44 @@ class SRVQueryFailure(Exception):
         return 'SRV query failure: %s' % self.args[0]
 
 
+def lookup_expiry(name: str, protocol: str = 'TCP',
+           domain: typing.Optional[str] = None,
+           tcp_resolver: bool = False) -> tuple[typing.List[SRV], float]:
+    """Return a list of service records and associated data for the given
+    service name, protocol and optional domain. If protocol is not specified,
+    TCP will be used. If domain is not specified, the domain name returned by
+    the operating system will be used.
+
+    This also returns the timestamp of the expiration of the records.
+
+    Service records will be returned as a named tuple with host, port, priority
+    and weight attributes:
+
+        >>> import srvlookup
+        >>> srvlookup.lookup_expiry('api', 'memcached')
+        ([SRV(host='192.169.1.100', port=11211, priority=1, weight=0,
+              hostname='host1.example.com'),
+          SRV(host='192.168.1.102', port=11211, priority=1, weight=0,
+              hostname='host2.example.com'),
+          SRV(host='192.168.1.120', port=11211, priority=1, weight=0,
+              hostname='host3.example.com'),
+          SRV(host='192.168.1.126', port=11211, priority=1, weight=0,
+              hostname='host4.example.com')],
+         1729296172.4126928)
+        >>>
+
+    :param name: The service name
+    :param protocol: The protocol name, defaults to TCP
+    :param domain: The domain name to use, defaults to local domain name
+
+    """
+    answer = _query_srv_records(
+        f'_{name}._{protocol}.{domain or _get_domain()}', tcp_resolver)
+    results = _build_result_set(answer)
+    records = sorted(results, key=lambda r: (r.priority, -r.weight, r.host))
+    return (records, answer.expiration)
+
+
 def lookup(name: str, protocol: str = 'TCP',
            domain: typing.Optional[str] = None,
            tcp_resolver: bool = False) -> typing.List[SRV]:
@@ -53,10 +91,7 @@ def lookup(name: str, protocol: str = 'TCP',
     :param domain: The domain name to use, defaults to local domain name
 
     """
-    answer = _query_srv_records(
-        f'_{name}._{protocol}.{domain or _get_domain()}', tcp_resolver)
-    results = _build_result_set(answer)
-    return sorted(results, key=lambda r: (r.priority, -r.weight, r.host))
+    return lookup_expiry(name, protocol, domain, tcp_resolver)[0]
 
 
 def _get_domain() -> str:
